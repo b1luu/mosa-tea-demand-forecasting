@@ -4,3 +4,6 @@ data/raw/
 # private mapping files / secrets
 data/private/
 .env
+
+# macOS junk
+.DS_Store
