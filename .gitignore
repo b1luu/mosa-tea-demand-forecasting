@@ -1,0 +1,6 @@
+# raw exports
+data/raw/
+
+# private mapping files / secrets
+data/private/
+.env
