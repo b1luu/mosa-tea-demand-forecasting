@@ -66,3 +66,10 @@ Optional dependency for plots:
 ```
 pip install matplotlib
 ```
+
+## Interpreting Results (Quick Guide)
+
+- Weather coefficients are **associations**, not proof of causality.
+- Weekday effects typically dominate (Friday is the baseline day).
+- If coefficients have small t-stats (near 0), the signal is weak/noisy.
+- A higher R² here usually reflects weekday patterns more than weather.
