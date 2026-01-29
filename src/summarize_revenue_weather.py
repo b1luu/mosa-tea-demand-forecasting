@@ -3,6 +3,10 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+WEEKDAY_CATEGORIES = sorted(
+    ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+)
+
 
 def load_data(path: str) -> pd.DataFrame:
     """Load merged daily revenue + weather data."""
@@ -55,9 +59,16 @@ def save_summaries(
     print("\nSaved summary CSV files to data/analytics/")
 
 
-def build_design_matrix(df: pd.DataFrame) -> tuple[np.ndarray, list[str]]:
+def build_design_matrix(
+    df: pd.DataFrame,
+    weekday_categories: list[str] | None = None,
+) -> tuple[np.ndarray, list[str]]:
     """Build regression matrix with weather + weekday controls."""
     df = df.copy()
+    if weekday_categories is not None:
+        df["weekday_name"] = pd.Categorical(
+            df["weekday_name"], categories=weekday_categories, ordered=False
+        )
     weekday_dummies = pd.get_dummies(df["weekday_name"], prefix="weekday", drop_first=True)
     weekday_dummies = weekday_dummies.astype(float)
 
@@ -82,7 +93,7 @@ def linear_regression_summary(
         print("No rows with complete revenue/weather data; skipping regression.")
         return None
 
-    X, feature_names = build_design_matrix(df)
+    X, feature_names = build_design_matrix(df, WEEKDAY_CATEGORIES)
     y = df["revenue"].to_numpy(dtype=float)
 
     beta, *_ = np.linalg.lstsq(X, y, rcond=None)
@@ -261,7 +272,7 @@ def monte_carlo_weather_effect(
 
     rng = np.random.default_rng(seed)
 
-    X_obs, feature_names = build_design_matrix(df)
+    X_obs, feature_names = build_design_matrix(df, WEEKDAY_CATEGORIES)
     y = df["revenue"].to_numpy(dtype=float)
     beta_obs, *_ = np.linalg.lstsq(X_obs, y, rcond=None)
 
@@ -275,7 +286,7 @@ def monte_carlo_weather_effect(
         perm_idx = rng.permutation(len(df))
         permuted = df.copy()
         permuted[["temp", "rain"]] = weather_values[perm_idx]
-        X_perm, _ = build_design_matrix(permuted)
+        X_perm, _ = build_design_matrix(permuted, WEEKDAY_CATEGORIES)
         beta_perm, *_ = np.linalg.lstsq(X_perm, y, rcond=None)
         null_coefs[i, 0] = beta_perm[temp_idx]
         null_coefs[i, 1] = beta_perm[rain_idx]
@@ -346,6 +357,67 @@ def monte_carlo_weather_effect(
     print(f"\nSaved Monte Carlo outputs to {out_dir}/ and {out_fig_dir}/")
 
 
+def bootstrap_coefficients(
+    df: pd.DataFrame,
+    n_iter: int = 2000,
+    seed: int = 42,
+    out_dir: str = "data/analytics",
+    robust: bool = False,
+) -> None:
+    """Bootstrap confidence intervals for regression coefficients."""
+    df = df.dropna(subset=["revenue", "temp", "rain", "weekday_name"]).copy()
+    if df.empty:
+        label = "ROBUST" if robust else "OLS"
+        print(f"\n=== BOOTSTRAP CIs ({label}) ===")
+        print("No rows with complete revenue/weather data; skipping bootstrap.")
+        return
+
+    rng = np.random.default_rng(seed)
+    n = len(df)
+
+    X_obs, feature_names = build_design_matrix(df, WEEKDAY_CATEGORIES)
+    y_obs = df["revenue"].to_numpy(dtype=float)
+
+    if robust:
+        beta_obs, _, _ = fit_robust_regression(X_obs, y_obs)
+    else:
+        beta_obs, *_ = np.linalg.lstsq(X_obs, y_obs, rcond=None)
+
+    boot = np.zeros((n_iter, len(feature_names)), dtype=float)
+
+    for i in range(n_iter):
+        sample_idx = rng.integers(0, n, n)
+        sample = df.iloc[sample_idx].reset_index(drop=True)
+        X, _ = build_design_matrix(sample, WEEKDAY_CATEGORIES)
+        y = sample["revenue"].to_numpy(dtype=float)
+        if robust:
+            beta, _, _ = fit_robust_regression(X, y)
+        else:
+            beta, *_ = np.linalg.lstsq(X, y, rcond=None)
+        boot[i] = beta
+
+    ci_low = np.percentile(boot, 2.5, axis=0)
+    ci_high = np.percentile(boot, 97.5, axis=0)
+
+    table = pd.DataFrame(
+        {
+            "feature": feature_names,
+            "coef": beta_obs,
+            "ci_low_2_5": ci_low,
+            "ci_high_97_5": ci_high,
+        }
+    )
+
+    suffix = "robust_v1" if robust else "v1"
+    out_path = f"{out_dir}/bootstrap_weather_coefficients_{suffix}.csv"
+    table.to_csv(out_path, index=False)
+
+    label = "ROBUST" if robust else "OLS"
+    print(f"\n=== BOOTSTRAP CIs ({label}) ===")
+    print(table.to_string(index=False))
+    print(f"\nSaved bootstrap coefficients to {out_path}")
+
+
 def fit_robust_regression(
     X: np.ndarray,
     y: np.ndarray,
@@ -396,7 +468,7 @@ def robust_regression_summary(
         print("No rows with complete revenue/weather data; skipping regression.")
         return None
 
-    X, feature_names = build_design_matrix(df)
+    X, feature_names = build_design_matrix(df, WEEKDAY_CATEGORIES)
     y = df["revenue"].to_numpy(dtype=float)
 
     beta, weights, residuals = fit_robust_regression(X, y)
@@ -479,6 +551,8 @@ def main() -> None:
             std_err_column="std_err_wls",
         )
     monte_carlo_weather_effect(df)
+    bootstrap_coefficients(df)
+    bootstrap_coefficients(df, robust=True)
 
 
 if __name__ == "__main__":
