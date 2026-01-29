@@ -417,6 +417,45 @@ def bootstrap_coefficients(
     print(table.to_string(index=False))
     print(f"\nSaved bootstrap coefficients to {out_path}")
 
+    try:
+        import matplotlib.pyplot as plt
+    except ImportError:
+        print("\nmatplotlib not installed; skipping bootstrap plots.")
+        return
+
+    out_fig_dir = Path(out_dir) / "figures"
+    out_fig_dir.mkdir(parents=True, exist_ok=True)
+
+    plot_df = table[table["feature"] != "intercept"].copy()
+    plot_df = plot_df.sort_values("coef")
+    xerr = np.vstack(
+        [
+            plot_df["coef"] - plot_df["ci_low_2_5"],
+            plot_df["ci_high_97_5"] - plot_df["coef"],
+        ]
+    )
+
+    plt.figure(figsize=(8, 4.5))
+    plt.errorbar(
+        plot_df["coef"],
+        plot_df["feature"],
+        xerr=xerr,
+        fmt="o",
+        color="#1f77b4",
+        ecolor="#9ecae1",
+        capsize=3,
+    )
+    plt.axvline(0, color="#555", linewidth=1)
+    title_prefix = "Robust " if robust else ""
+    plt.title(f"{title_prefix}Bootstrap 95% CIs (Weather + Weekday Controls)")
+    plt.xlabel("Coefficient (Revenue USD)")
+    plt.tight_layout()
+    plt.savefig(
+        out_fig_dir / f"bootstrap_coefficients_{suffix}.png",
+        dpi=150,
+    )
+    plt.close()
+
 
 def fit_robust_regression(
     X: np.ndarray,
