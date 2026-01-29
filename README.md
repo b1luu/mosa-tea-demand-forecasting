@@ -31,3 +31,38 @@ Initial exploratory analysis summarizes:
 
 Summary tables are generated using:
 - `src/summarize_revenue_weather.py`
+
+## Regression + Visualizations
+
+The summary script also fits a simple linear regression to estimate the
+association between weather and revenue while controlling for weekday effects.
+This is **not causal**, but it provides directional signals and effect sizes.
+
+Outputs saved to `data/analytics/`:
+- `regression_weather_coefficients_v1.csv`
+- `regression_weather_metrics_v1.csv`
+
+If `matplotlib` is installed, plots are saved to `data/analytics/figures/`:
+- `regression_coefficients_v1.png`
+- `regression_actual_vs_predicted_v1.png`
+- `regression_residuals_vs_fitted_v1.png`
+- `regression_residuals_hist_v1.png`
+- `scatter_revenue_vs_temp_v1.png`
+- `scatter_revenue_vs_rain_v1.png`
+
+## How To Run
+
+1) Build the daily revenue + weather dataset:
+```
+python .\src\make_daily_revenue_weather_v1.py
+```
+
+2) Generate summaries, regression, and plots:
+```
+python .\src\summarize_revenue_weather.py
+```
+
+Optional dependency for plots:
+```
+pip install matplotlib
+```
