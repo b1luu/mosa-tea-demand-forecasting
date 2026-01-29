@@ -246,6 +246,106 @@ def save_regression_plots(
     print(f"\nSaved regression plots to {out_dir}/")
 
 
+def monte_carlo_weather_effect(
+    df: pd.DataFrame,
+    n_iter: int = 2000,
+    seed: int = 42,
+    out_dir: str = "data/analytics",
+) -> None:
+    """Permutation-based Monte Carlo test for weather coefficients."""
+    df = df.dropna(subset=["revenue", "temp", "rain", "weekday_name"]).copy()
+    if df.empty:
+        print("\n=== MONTE CARLO (Weather Relation) ===")
+        print("No rows with complete revenue/weather data; skipping simulation.")
+        return
+
+    rng = np.random.default_rng(seed)
+
+    X_obs, feature_names = build_design_matrix(df)
+    y = df["revenue"].to_numpy(dtype=float)
+    beta_obs, *_ = np.linalg.lstsq(X_obs, y, rcond=None)
+
+    temp_idx = feature_names.index("temp")
+    rain_idx = feature_names.index("rain")
+
+    null_coefs = np.zeros((n_iter, 2), dtype=float)
+    weather_values = df[["temp", "rain"]].to_numpy(dtype=float)
+
+    for i in range(n_iter):
+        perm_idx = rng.permutation(len(df))
+        permuted = df.copy()
+        permuted[["temp", "rain"]] = weather_values[perm_idx]
+        X_perm, _ = build_design_matrix(permuted)
+        beta_perm, *_ = np.linalg.lstsq(X_perm, y, rcond=None)
+        null_coefs[i, 0] = beta_perm[temp_idx]
+        null_coefs[i, 1] = beta_perm[rain_idx]
+
+    obs_temp = beta_obs[temp_idx]
+    obs_rain = beta_obs[rain_idx]
+    p_temp = float((np.abs(null_coefs[:, 0]) >= abs(obs_temp)).mean())
+    p_rain = float((np.abs(null_coefs[:, 1]) >= abs(obs_rain)).mean())
+
+    summary = pd.DataFrame(
+        [
+            {
+                "feature": "temp",
+                "observed_coef": obs_temp,
+                "null_mean": float(np.mean(null_coefs[:, 0])),
+                "null_std": float(np.std(null_coefs[:, 0], ddof=1)),
+                "empirical_p_two_sided": p_temp,
+                "n_iter": n_iter,
+            },
+            {
+                "feature": "rain",
+                "observed_coef": obs_rain,
+                "null_mean": float(np.mean(null_coefs[:, 1])),
+                "null_std": float(np.std(null_coefs[:, 1], ddof=1)),
+                "empirical_p_two_sided": p_rain,
+                "n_iter": n_iter,
+            },
+        ]
+    )
+
+    null_df = pd.DataFrame(null_coefs, columns=["temp_coef", "rain_coef"])
+    null_df.to_csv(f"{out_dir}/monte_carlo_weather_null_v1.csv", index=False)
+    summary.to_csv(f"{out_dir}/monte_carlo_weather_summary_v1.csv", index=False)
+
+    print("\n=== MONTE CARLO (Weather Relation) ===")
+    print("Permutation test that breaks weather->revenue alignment, controlling weekday.")
+    print(summary.to_string(index=False))
+
+    try:
+        import matplotlib.pyplot as plt
+    except ImportError:
+        print("\nmatplotlib not installed; skipping Monte Carlo plots.")
+        return
+
+    out_fig_dir = Path(out_dir) / "figures"
+    out_fig_dir.mkdir(parents=True, exist_ok=True)
+
+    plt.figure(figsize=(6, 4.5))
+    plt.hist(null_coefs[:, 0], bins=20, color="#6baed6", alpha=0.85, edgecolor="white")
+    plt.axvline(obs_temp, color="#111", linewidth=1.5)
+    plt.title("Monte Carlo Null: Temp Coef")
+    plt.xlabel("Coefficient (Revenue USD / F)")
+    plt.ylabel("Count")
+    plt.tight_layout()
+    plt.savefig(out_fig_dir / "monte_carlo_temp_coef_v1.png", dpi=150)
+    plt.close()
+
+    plt.figure(figsize=(6, 4.5))
+    plt.hist(null_coefs[:, 1], bins=20, color="#9ecae1", alpha=0.85, edgecolor="white")
+    plt.axvline(obs_rain, color="#111", linewidth=1.5)
+    plt.title("Monte Carlo Null: Rain Coef")
+    plt.xlabel("Coefficient (Revenue USD / Rain)")
+    plt.ylabel("Count")
+    plt.tight_layout()
+    plt.savefig(out_fig_dir / "monte_carlo_rain_coef_v1.png", dpi=150)
+    plt.close()
+
+    print(f"\nSaved Monte Carlo outputs to {out_dir}/ and {out_fig_dir}/")
+
+
 def fit_robust_regression(
     X: np.ndarray,
     y: np.ndarray,
@@ -378,6 +478,7 @@ def main() -> None:
             title_prefix="Robust ",
             std_err_column="std_err_wls",
         )
+    monte_carlo_weather_effect(df)
 
 
 if __name__ == "__main__":
