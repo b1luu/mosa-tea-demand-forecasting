@@ -31,9 +31,3 @@ Initial exploratory analysis summarizes:
 
 Summary tables are generated using:
 - `src/summarize_revenue_weather.py`
-## Next Steps
-
-Planned extensions include:
-- Visualization of revenue and weather relationships
-- Regression and tree-based models to quantify weather effects
-- Short-term demand forecasting using weather as exogenous features
