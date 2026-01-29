@@ -128,6 +128,7 @@ def linear_regression_summary(
     )
 
     print("\n=== LINEAR REGRESSION (Weather -> Revenue) ===")
+    print("NOTE: This analysis is NOT causal, likely low value, and highly likely discontinued.")
     print(metrics.to_string(index=False))
     print("\nCoefficients (weather + weekday controls):")
     print(coef_table.to_string(index=False))

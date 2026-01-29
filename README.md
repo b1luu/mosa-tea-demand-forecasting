@@ -73,3 +73,5 @@ pip install matplotlib
 - Weekday effects typically dominate (Friday is the baseline day).
 - If coefficients have small t-stats (near 0), the signal is weak/noisy.
 - A higher R² here usually reflects weekday patterns more than weather.
+- This analysis is **not causal**, is likely **low value** for decision-making,
+  and is **highly likely discontinued** unless new data or a stronger design is added.
