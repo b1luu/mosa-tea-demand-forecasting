@@ -144,6 +144,9 @@ def save_regression_plots(
     coef_table: pd.DataFrame,
     y_hat: np.ndarray,
     out_dir: str = "data/analytics/figures",
+    name_prefix: str = "",
+    title_prefix: str = "",
+    std_err_column: str = "std_err",
 ) -> None:
     """Save basic regression visualizations."""
     try:
@@ -156,22 +159,26 @@ def save_regression_plots(
 
     plot_df = coef_table[coef_table["feature"] != "intercept"].copy()
     plot_df = plot_df.sort_values("coef")
+    prefix = f"{name_prefix}_" if name_prefix else ""
 
     plt.figure(figsize=(8, 4.5))
+    if std_err_column not in plot_df.columns:
+        raise KeyError(f"Missing expected std error column: {std_err_column}")
+
     plt.errorbar(
         plot_df["coef"],
         plot_df["feature"],
-        xerr=plot_df["std_err"],
+        xerr=plot_df[std_err_column],
         fmt="o",
         color="#1f77b4",
         ecolor="#9ecae1",
         capsize=3,
     )
     plt.axvline(0, color="#555", linewidth=1)
-    plt.title("Regression Coefficients (Weather + Weekday Controls)")
+    plt.title(f"{title_prefix}Regression Coefficients (Weather + Weekday Controls)")
     plt.xlabel("Coefficient (Revenue USD)")
     plt.tight_layout()
-    plt.savefig(Path(out_dir) / "regression_coefficients_v1.png", dpi=150)
+    plt.savefig(Path(out_dir) / f"{prefix}regression_coefficients_v1.png", dpi=150)
     plt.close()
 
     y = df["revenue"].to_numpy(dtype=float)
@@ -180,11 +187,11 @@ def save_regression_plots(
     min_val = float(min(y_hat.min(), y.min()))
     max_val = float(max(y_hat.max(), y.max()))
     plt.plot([min_val, max_val], [min_val, max_val], color="#333", linewidth=1)
-    plt.title("Actual vs Predicted Revenue")
+    plt.title(f"{title_prefix}Actual vs Predicted Revenue")
     plt.xlabel("Predicted Revenue (USD)")
     plt.ylabel("Actual Revenue (USD)")
     plt.tight_layout()
-    plt.savefig(Path(out_dir) / "regression_actual_vs_predicted_v1.png", dpi=150)
+    plt.savefig(Path(out_dir) / f"{prefix}regression_actual_vs_predicted_v1.png", dpi=150)
     plt.close()
 
     residuals = y - y_hat
@@ -192,20 +199,20 @@ def save_regression_plots(
     plt.figure(figsize=(6, 4.5))
     plt.scatter(y_hat, residuals, alpha=0.75, color="#d62728")
     plt.axhline(0, color="#333", linewidth=1)
-    plt.title("Residuals vs Fitted")
+    plt.title(f"{title_prefix}Residuals vs Fitted")
     plt.xlabel("Fitted Revenue (USD)")
     plt.ylabel("Residual (Actual - Fitted)")
     plt.tight_layout()
-    plt.savefig(Path(out_dir) / "regression_residuals_vs_fitted_v1.png", dpi=150)
+    plt.savefig(Path(out_dir) / f"{prefix}regression_residuals_vs_fitted_v1.png", dpi=150)
     plt.close()
 
     plt.figure(figsize=(6, 4.5))
     plt.hist(residuals, bins=12, color="#ff7f0e", alpha=0.85, edgecolor="white")
-    plt.title("Residual Distribution")
+    plt.title(f"{title_prefix}Residual Distribution")
     plt.xlabel("Residual (USD)")
     plt.ylabel("Count")
     plt.tight_layout()
-    plt.savefig(Path(out_dir) / "regression_residuals_hist_v1.png", dpi=150)
+    plt.savefig(Path(out_dir) / f"{prefix}regression_residuals_hist_v1.png", dpi=150)
     plt.close()
 
     def scatter_with_trendline(x: np.ndarray, y_vals: np.ndarray, x_label: str, out_name: str) -> None:
@@ -216,7 +223,7 @@ def save_regression_plots(
             x_line = np.linspace(float(x.min()), float(x.max()), 100)
             y_line = slope * x_line + intercept
             plt.plot(x_line, y_line, color="#111", linewidth=1.5)
-        plt.title(f"Revenue vs {x_label}")
+        plt.title(f"{title_prefix}Revenue vs {x_label}")
         plt.xlabel(x_label)
         plt.ylabel("Revenue (USD)")
         plt.tight_layout()
@@ -227,13 +234,13 @@ def save_regression_plots(
         df["temp"].to_numpy(dtype=float),
         y,
         "Temperature (F)",
-        "scatter_revenue_vs_temp_v1.png",
+        f"{prefix}scatter_revenue_vs_temp_v1.png",
     )
     scatter_with_trendline(
         df["rain"].to_numpy(dtype=float),
         y,
         "Rain",
-        "scatter_revenue_vs_rain_v1.png",
+        f"{prefix}scatter_revenue_vs_rain_v1.png",
     )
 
     print(f"\nSaved regression plots to {out_dir}/")
@@ -281,13 +288,13 @@ def fit_robust_regression(
 def robust_regression_summary(
     df: pd.DataFrame,
     out_dir: str = "data/analytics",
-) -> None:
+) -> tuple[pd.DataFrame, pd.DataFrame, np.ndarray] | None:
     """Fit robust regression (Huber) to reduce outlier influence."""
     df = df.dropna(subset=["revenue", "temp", "rain", "weekday_name"]).copy()
     if df.empty:
         print("\n=== ROBUST REGRESSION (Huber) ===")
         print("No rows with complete revenue/weather data; skipping regression.")
-        return
+        return None
 
     X, feature_names = build_design_matrix(df)
     y = df["revenue"].to_numpy(dtype=float)
@@ -343,6 +350,7 @@ def robust_regression_summary(
     coef_table.to_csv(f"{out_dir}/regression_weather_coefficients_robust_v1.csv", index=False)
     metrics.to_csv(f"{out_dir}/regression_weather_metrics_robust_v1.csv", index=False)
     print("\nSaved robust regression outputs to data/analytics/")
+    return df, coef_table, y_hat
 
 
 def main() -> None:
@@ -359,7 +367,17 @@ def main() -> None:
     if regression is not None:
         df_used, coef_table, y_hat = regression
         save_regression_plots(df_used, coef_table, y_hat)
-    robust_regression_summary(df)
+    robust = robust_regression_summary(df)
+    if robust is not None:
+        df_used, coef_table, y_hat = robust
+        save_regression_plots(
+            df_used,
+            coef_table,
+            y_hat,
+            name_prefix="robust",
+            title_prefix="Robust ",
+            std_err_column="std_err_wls",
+        )
 
 
 if __name__ == "__main__":

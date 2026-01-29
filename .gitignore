@@ -5,5 +5,8 @@ data/raw/
 data/private/
 .env
 
+# generated figures
+data/analytics/figures/
+
 # macOS junk
 .DS_Store
