@@ -239,6 +239,112 @@ def save_regression_plots(
     print(f"\nSaved regression plots to {out_dir}/")
 
 
+def fit_robust_regression(
+    X: np.ndarray,
+    y: np.ndarray,
+    max_iter: int = 50,
+    tol: float = 1e-6,
+    huber_k: float = 1.345,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Iteratively reweighted least squares with Huber weights."""
+    beta, *_ = np.linalg.lstsq(X, y, rcond=None)
+
+    for _ in range(max_iter):
+        residuals = y - X @ beta
+        median = float(np.median(residuals))
+        mad = float(np.median(np.abs(residuals - median)))
+        scale = 1.4826 * mad
+
+        if scale <= 1e-12:
+            break
+
+        abs_r = np.abs(residuals)
+        threshold = huber_k * scale
+        weights = np.ones_like(residuals)
+        mask = abs_r > threshold
+        weights[mask] = threshold / abs_r[mask]
+
+        Xw = X * np.sqrt(weights)[:, None]
+        yw = y * np.sqrt(weights)
+        beta_new, *_ = np.linalg.lstsq(Xw, yw, rcond=None)
+
+        if np.linalg.norm(beta_new - beta) < tol:
+            beta = beta_new
+            break
+
+        beta = beta_new
+
+    residuals = y - X @ beta
+    return beta, weights, residuals
+
+
+def robust_regression_summary(
+    df: pd.DataFrame,
+    out_dir: str = "data/analytics",
+) -> None:
+    """Fit robust regression (Huber) to reduce outlier influence."""
+    df = df.dropna(subset=["revenue", "temp", "rain", "weekday_name"]).copy()
+    if df.empty:
+        print("\n=== ROBUST REGRESSION (Huber) ===")
+        print("No rows with complete revenue/weather data; skipping regression.")
+        return
+
+    X, feature_names = build_design_matrix(df)
+    y = df["revenue"].to_numpy(dtype=float)
+
+    beta, weights, residuals = fit_robust_regression(X, y)
+    y_hat = X @ beta
+
+    sse = float(np.sum(weights * (residuals ** 2)))
+    sst = float(np.sum((y - y.mean()) ** 2))
+    r2 = 1.0 - float(np.sum((y - y_hat) ** 2)) / sst if sst else float("nan")
+    rmse = float(np.sqrt(np.mean((y - y_hat) ** 2)))
+
+    n = len(y)
+    p = X.shape[1]
+    dof = max(n - p, 0)
+    if dof > 0:
+        sigma2 = sse / dof
+        xtwx_inv = np.linalg.pinv(X.T @ (weights[:, None] * X))
+        se = np.sqrt(np.diag(sigma2 * xtwx_inv))
+        t_stat = np.where(se > 0, beta / se, np.nan)
+    else:
+        se = np.full_like(beta, np.nan, dtype=float)
+        t_stat = np.full_like(beta, np.nan, dtype=float)
+
+    coef_table = pd.DataFrame(
+        {
+            "feature": feature_names,
+            "coef": beta,
+            "std_err_wls": se,
+            "t_stat_wls": t_stat,
+        }
+    )
+
+    metrics = pd.DataFrame(
+        [
+            {
+                "rows": n,
+                "features": p,
+                "r2": r2,
+                "rmse": rmse,
+                "mean_revenue": float(y.mean()),
+                "avg_weight": float(np.mean(weights)),
+            }
+        ]
+    )
+
+    print("\n=== ROBUST REGRESSION (Huber) ===")
+    print("NOTE: Std errors/t-stats are WLS approximations, not fully robust.")
+    print(metrics.to_string(index=False))
+    print("\nCoefficients (robust, weather + weekday controls):")
+    print(coef_table.to_string(index=False))
+
+    coef_table.to_csv(f"{out_dir}/regression_weather_coefficients_robust_v1.csv", index=False)
+    metrics.to_csv(f"{out_dir}/regression_weather_metrics_robust_v1.csv", index=False)
+    print("\nSaved robust regression outputs to data/analytics/")
+
+
 def main() -> None:
     data_path = "data/analytics/daily_revenue_weather_v1.csv"
 
@@ -253,6 +359,7 @@ def main() -> None:
     if regression is not None:
         df_used, coef_table, y_hat = regression
         save_regression_plots(df_used, coef_table, y_hat)
+    robust_regression_summary(df)
 
 
 if __name__ == "__main__":
