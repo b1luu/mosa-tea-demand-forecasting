@@ -554,6 +554,11 @@ def main() -> None:
     bootstrap_coefficients(df)
     bootstrap_coefficients(df, robust=True)
 
+    print(
+        "\nBOTTOM LINE: With this 31-day sample, there is no reliable evidence that "
+        "weather affects revenue; weekday effects dominate."
+    )
+
 
 if __name__ == "__main__":
     main()

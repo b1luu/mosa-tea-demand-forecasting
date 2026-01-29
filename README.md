@@ -75,3 +75,5 @@ pip install matplotlib
 - A higher R² here usually reflects weekday patterns more than weather.
 - This analysis is **not causal**, is likely **low value** for decision-making,
   and is **highly likely discontinued** unless new data or a stronger design is added.
+- Bottom line: with the current 31-day sample, there is **no reliable evidence**
+  that weather affects revenue; weekday effects dominate.
